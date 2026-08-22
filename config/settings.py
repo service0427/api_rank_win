@@ -23,6 +23,9 @@ PROXY_STATUS_API = "http://127.0.0.1:9999/api/proxy/status"
 USE_PROXY_POOL = os.getenv("USE_PROXY_POOL", "1" if os.name == "posix" else "0") == "1"
 PROXY_TIMEOUT = 8.0
 
+# Stage 2 Nodriver Browser Engine Control (1=Enable, 0=Disable/Packet-Only)
+ENABLE_DEEP_NODRIVER = os.getenv("ENABLE_DEEP_NODRIVER", "1" if os.name == "nt" else "0") == "1"
+
 # User Agents
 MOBILE_USER_AGENT = "Mozilla/5.0 (Linux; Android 14; SM-S928N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36"
 DESKTOP_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"

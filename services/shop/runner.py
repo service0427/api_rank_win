@@ -3,6 +3,7 @@ import time
 from typing import Dict, Any, Optional
 import nodriver as uc
 from core.logger import get_logger
+from config.settings import ENABLE_DEEP_NODRIVER
 from config.db_manager import db_mgr
 from services.shop.packet_crawler import crawl_shop_packet
 from services.shop.deep_crawler import crawl_shop_deep_nodriver
@@ -83,30 +84,29 @@ async def get_shop_rank(
     # -------------------------------------------------------------
     # 1. STEP 1: Fast Packet Probe (1~72위, 0.5초 소요)
     # -------------------------------------------------------------
-    if target_id:
-        logger.info(f"[STAGE 1: FAST PROBE] Probing Ranks up to {max_pages * 50} for target '{target_id}'...")
-        pkt_res = await asyncio.to_thread(
-            crawl_shop_packet,
+    logger.info(f"[STAGE 1: FAST PROBE] Probing Ranks for '{keyword}' (Target: {target_id})...")
+    pkt_res = await asyncio.to_thread(
+        crawl_shop_packet,
+        keyword=keyword,
+        target_id=target_id,
+        max_pages=max_pages,
+        proxy_url=proxy_url
+    )
+
+    if pkt_res.get("products"):
+        db_mgr.save_or_update_cache(
+            service_type="shop",
             keyword=keyword,
-            target_id=target_id,
-            max_pages=max_pages,
-            proxy_url=proxy_url
+            new_items=pkt_res["products"],
+            engine_source="PACKET"
         )
 
-        if pkt_res.get("products"):
-            db_mgr.save_or_update_cache(
-                service_type="shop",
-                keyword=keyword,
-                new_items=pkt_res["products"],
-                engine_source="PACKET"
-            )
-
+    if target_id:
         if pkt_res.get("targetFound"):
             elapsed_sec = time.time() - t0
             elapsed_ms = int(elapsed_sec * 1000)
 
             tp = pkt_res.get("targetProduct", {})
-            # Smart Sync to nshop_list
             master_info = db_mgr.sync_master_item_info("shop", target_id, tp)
             pkt_res["masterInfo"] = master_info
 
@@ -140,7 +140,37 @@ async def get_shop_rank(
             logger.info(f"★ Target '{target_id}' found in Stage 1 at Rank #{pkt_res.get('targetRank')} ({elapsed_sec:.2f}s)")
             return pkt_res
 
+        # If target not found in Stage 1 packet and running in packet-only mode:
+        if not ENABLE_DEEP_NODRIVER:
+            elapsed_sec = time.time() - t0
+            db_mgr.log_api_request(
+                service_type="shop",
+                keyword=keyword,
+                target_code=target_id,
+                result_rank=None,
+                target_found=False,
+                is_cache_hit=False,
+                cache_coverage_rank=pkt_res.get("totalExtracted", 70),
+                engine_used="PACKET",
+                elapsed_ms=int(elapsed_sec * 1000),
+                client_ip=client_ip,
+                proxy_used=pkt_res.get("proxyUsed")
+            )
+            pkt_res["stage"] = "STAGE_1_PACKET"
+            pkt_res["isCacheHit"] = False
+            pkt_res["totalTime"] = elapsed_sec
+            logger.info(f"Target '{target_id}' not found in top organic listings. Returning NOT_FOUND (0위) directly.")
+            return pkt_res
+
         logger.info(f"[STAGE 2: DEEP EXPANSION] Target not in top 72. Launching Nodriver for deep search...")
+    else:
+        # Full mode (when target_id is None): return all packet items if deep nodriver is disabled
+        if not ENABLE_DEEP_NODRIVER:
+            elapsed_sec = time.time() - t0
+            pkt_res["stage"] = "STAGE_1_PACKET"
+            pkt_res["isCacheHit"] = False
+            pkt_res["totalTime"] = elapsed_sec
+            return pkt_res
 
     # -------------------------------------------------------------
     # 2. STEP 2: Deep Nodriver Search (73~500위 심층 탐색)
