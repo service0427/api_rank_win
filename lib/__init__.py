@@ -1,0 +1,3 @@
+"""
+NShop Rank Automation Library
+"""
