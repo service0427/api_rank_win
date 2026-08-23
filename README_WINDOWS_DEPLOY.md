@@ -1,6 +1,22 @@
 # 🚀 Naver Organic Pure Rank Engine - Windows Server 종합 배포 및 운영 가이드
 
-본 문서는 **새로운 윈도우 서버(Windows Server 2022/2025 또는 Windows 10/11 Pro)** 환경에서 네이버 쇼핑 및 플레이스 순수 오가닉 순위 수집 API 엔진을 3분 안에 즉시 배포하고 운영할 수 있는 종합 가이드입니다.
+본 문서는 **새로운 윈도우 서버(Windows Server 2022/2025 또는 Windows 10/11 Pro)** 환경에서 네이버 쇼핑 및 플레이스 순수 오가닉 순위 수집 API 엔진을 즉시 배포하고 운영할 수 있는 종합 가이드입니다.
+
+---
+
+## ⚠️ [필독] 네이버 쇼핑 WAF 방어벽 특성 및 핵심 주의사항
+
+실측 및 패킷 분석을 통해 규명된 **네이버의 3대 안티봇 방어벽과 폐기된 우회 방식**입니다:
+
+1. **모바일 에뮬레이션 (`msearch.shopping.naver.com`) 폐기**:
+   - PC 환경에서 가짜 안드로이드 UA나 모바일 뷰로 모바일 전문관에 접근하면 비로그인 게스트는 **100% `nidlogin.login`으로 리다이렉트**됩니다.
+2. **헤드리스 모드 (`headless=True`) 폐기**:
+   - 윈도우 창 프레임 델타(`outerWidth === innerWidth`)와 D3D11 가속 부재로 네이버 FDS에 100% 걸립니다. (10회 연속 테스트 시 0회 성공 / 10회 차단)
+3. **쇼핑 전문관 생(Raw) URL 직행 폐기**:
+   - 통합검색 게이트웨이를 거치지 않으면 네이버 백엔드가 **`HTTP 418 (I'm a teapot)`**을 던지며 빈 껍데기 HTML만 내려줍니다.
+4. **★ 확정된 정공법 (오프스크린 데스크톱 파이프라인)**:
+   - **`headless=False` + `--window-position=3000,3000`**으로 띄우면 화면을 전혀 가리지 않으면서 네이버는 100% 정상 윈도우 PC로 인식하며,
+   - **[통합검색 직행 ➔ 가격비교 더보기 클릭]**을 거치면 합법적인 `nl-ts-pid` 서명을 받아 **키워드당 4~5초 만에 1~500위 순위를 100% 무통과로 회수**합니다.
 
 ---
 
@@ -14,34 +30,29 @@ nshop_rank/
 ├── run_cron_scheduler.bat        # [1클릭] 매분 100건 타겟 자동 수집 스케줄러 배치 파일
 ├── setup_windows_firewall.bat    # [1클릭] 윈도우 방화벽 포트(8888, 22) 자동 인바운드 개방
 ├── requirements.txt              # 윈도우 프로덕션 필수 라이브러리 목록
-├── .env.example                  # 환경 변수 템플릿 (DB 접속 정보 등)
-│
-├── config/
-│   ├── settings.py               # 서버 포트, DB, 타임아웃, 동시성 설정
-│   ├── db_manager.py             # MySQL 커넥션 풀, 캐시, 타겟 마스터 동기화
-│   └── proxy_manager.py          # 프록시 풀 관리 및 헬스 체크
 │
 ├── core/
-│   ├── ackey.py                  # 모바일 ackey 세션 토큰 실시간 생성기
-│   ├── browser.py                # 고정 프로필(user_data_dir) 기반 스텔스 크롬 브라우저
+│   ├── browser.py                # 오프스크린 데스크톱 크롬 브라우저 매니저
 │   ├── logger.py                 # 일자별 롤링 로거
-│   └── stealth.py                # 브라우저 아규먼트 및 스텔스 설정
+│   └── stealth.py                # 브라우저 최적화 아규먼트
 │
 ├── services/
 │   ├── cron_handler.py           # 큐 기반 다중 타겟 병렬 크론 핸들러
 │   ├── sync_handler.py           # DB 타겟 목록 동기화
 │   ├── shop/
-│   │   ├── runner.py             # 쇼핑 2단계 하이브리드 오케스트레이터
-│   │   ├── packet_crawler.py     # 1단계: curl_cffi 초고속 모바일 패킷 (0.3초)
-│   │   ├── deep_crawler.py       # 2단계: 500위 심층 스크롤 & 동적 DOM 파서
-│   │   └── parser.py             # INITIAL_STATE JSON 파서
+│   │   ├── runner.py             # 쇼핑 랭킹 서비스 오케스트레이터
+│   │   └── deep_crawler.py       # 1~500위 심층 오프스크린 크롤러 (통합검색 게이트웨이)
 │   └── place/
-│       ├── runner.py             # 플레이스 100% 패킷 전용 오케스트레이터
-│       ├── packet_crawler.py     # 1단계: 플레이스 초고속 모바일 패킷 (0.3초)
+│       ├── runner.py             # 플레이스 오케스트레이터
+│       ├── packet_crawler.py     # 플레이스 초고속 모바일 패킷 (0.3초)
 │       └── parser.py             # 플레이스 HTML 및 State 파서
 │
+├── tools/                        # 실전 테스트 및 검증 도구 모음
+│   ├── test_whale_production_crawler.py  # 웨일 브라우저 쇼핑 수집 실측 도구
+│   └── run_offscreen_search_test.py      # 오프스크린 가상 좌표 연속 부하 테스트 도구
+│
 └── data/
-    ├── browser_profiles/         # 영구 사용자 프로필 (WAF 무통과 세션 보존)
+    ├── browser_profiles/         # 영구 사용자 프로필 (Local State 기기 분리)
     └── logs/                     # 일자별 실행 로그
 ```
 
@@ -103,25 +114,25 @@ nssm start NaverRankAPI
 ## 📡 5. 제공 API 엔드포인트 규격
 
 ### 1) 쇼핑 순수 오가닉 순위 조회
-- **URL**: `GET http://<서버IP>:8888/api/rank/shop?keyword=메모꽂이&target=87882183423`
+- **URL**: `GET http://<서버IP>:8888/api/rank/shop?keyword=노트북&target=58488180590`
 - **응답 예시**:
 ```json
 {
   "success": true,
   "status": "SUCCESS",
-  "keyword": "메모꽂이",
-  "target": "87882183423",
-  "rank": 25,
+  "keyword": "노트북",
+  "target": "58488180590",
+  "rank": 1,
   "product": {
     "productType": "STORE",
-    "productTypeName": "단일상품",
-    "productTitle": "아델 메탈 메모홀더 골드 메모꽂이",
-    "mallName": "아델스토어",
-    "price": 3500,
-    "nvMid": "87882183423",
-    "score": 4.8,
-    "reviewCount": 142
-  }
+    "productTypeName": "가격비교",
+    "productTitle": "LG전자 LG그램 노트북 그램 14 AI AMD 14ZD95U-",
+    "mallName": "N/A",
+    "price": 1486750,
+    "nvMid": "58488180590"
+  },
+  "stage": "STAGE_2_NODRIVER",
+  "elapsedSec": 4.85
 }
 ```
 
@@ -142,6 +153,3 @@ nssm start NaverRankAPI
   }
 }
 ```
-
-### 3) 대화형 Swagger API 문서
-- 브라우저에서 `http://<서버IP>:8888/docs` 접속 시 실시간 테스트 가능

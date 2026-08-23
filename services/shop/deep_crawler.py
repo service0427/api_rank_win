@@ -18,18 +18,18 @@ async def crawl_shop_deep_nodriver(
     keyword: str,
     target_id: Optional[str] = None,
     max_pages: int = 13,
-    headless: bool = True,
-    block_media: bool = True,
+    headless: bool = False,
+    offscreen: bool = True,
+    block_media: bool = False,
     proxy_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Deep Shopping Rank Crawler (Pure PC Desktop Human Flow):
-    1. Visits https://www.naver.com as a pure desktop browser.
-    2. Enters keyword and searches -> arrives at search.naver.com.
-    3. Clicks '네이버 가격비교 더보기' button with authentic nl-ts-pid.
-    4. Extracts Page 1 products (1~44) from __NEXT_DATA__.
-    5. Progressively navigates through Page 2 ~ max_pages (up to 500 items) via pagination buttons.
-    6. Returns immediately once target_id is discovered.
+    Deep Shopping Rank Crawler (Pure Windows Desktop Human Flow):
+    1. Directly visits https://search.naver.com?where=nexearch&query={keyword} (Search Gateway).
+    2. Clicks '네이버 가격비교 더보기' link to obtain valid nl-ts-pid session token.
+    3. Extracts Page 1 products (1~44) from __NEXT_DATA__ (0% login rate).
+    4. Progressively paginates Page 2 ~ max_pages (up to 500 items) via pagination buttons.
+    5. Returns immediately once target_id is discovered.
     """
     t0 = time.time()
     targets = {str(x).strip() for x in target_id.split(",")} if target_id else set()
@@ -41,12 +41,13 @@ async def crawl_shop_deep_nodriver(
             headless=headless,
             is_mobile=False,
             block_media=block_media,
+            offscreen=offscreen,
             proxy_url=current_proxy
         )
 
         try:
             tab = await browser.get("about:blank")
-            await tab.sleep(0.5)
+            await tab.sleep(0.3)
 
             all_products: List[Dict[str, Any]] = []
             seen_ids = set()
@@ -54,29 +55,12 @@ async def crawl_shop_deep_nodriver(
             target_rank = None
             target_prod = None
 
-            # Step 1: Open official Naver main page
-            logger.info("Step 1: Navigating to https://www.naver.com ...")
-            await tab.get("https://www.naver.com")
+            # Step 1: Direct Unified Search Gateway
+            q_enc = urllib.parse.quote(keyword)
+            search_url = f"https://search.naver.com/search.naver?where=nexearch&query={q_enc}"
+            logger.info(f"Step 1: Navigating to Unified Search Gateway: {search_url} ...")
+            await tab.get(search_url)
             await tab.sleep(2.0)
-
-            # Step 2: Enter search keyword and submit
-            logger.info(f"Step 2: Submitting keyword '{keyword}' ...")
-            q_input = await tab.select("input#query, input[name='query']")
-            if q_input:
-                await q_input.click()
-                await q_input.send_keys(keyword)
-                await tab.sleep(0.5)
-                s_btn = await tab.select("button.btn_search, .btn_search")
-                if s_btn:
-                    await s_btn.click()
-                else:
-                    await tab.evaluate("document.querySelector('input#query').form.submit()")
-            else:
-                q_enc = urllib.parse.quote(keyword)
-                ackey = generate_ackey()
-                await tab.get(f"https://search.naver.com/search.naver?where=nexearch&sm=top_hty&fbm=0&ie=utf8&query={q_enc}&ackey={ackey}")
-
-            await tab.sleep(2.5)
 
             # Step 3: Click '네이버 가격비교 더보기' button
             logger.info("Step 3: Locating and clicking '네이버 가격비교 더보기' link...")

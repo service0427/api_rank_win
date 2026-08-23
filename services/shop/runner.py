@@ -15,8 +15,8 @@ async def get_shop_rank(
     keyword: str,
     target_id: Optional[str] = None,
     max_pages: int = 13,
-    headless: bool = True,
-    block_media: bool = True,
+    headless: bool = False,
+    block_media: bool = False,
     proxy_url: Optional[str] = None,
     client_ip: Optional[str] = None
 ) -> Dict[str, Any]:
