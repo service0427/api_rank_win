@@ -39,25 +39,26 @@ async def start_stealth_browser(
     headless: bool = False,
     is_mobile: bool = False,
     block_media: bool = False,
-    offscreen: bool = True,
+    offscreen: bool = False,
     proxy_url: Optional[str] = None,
     user_data_dir: Optional[str] = None,
     extra_args: Optional[List[str]] = None,
 ) -> uc.Browser:
     """
     Launches a stealth Chrome browser instance with bot detection neutralized.
-    Default mode is pure Windows Desktop GUI running Off-screen (window-position=3000,3000)
-    which guarantees 100% WAF bypass with zero screen interference.
+    Default mode is pure Windows Desktop GUI running on-screen on dedicated server PCs,
+    which guarantees 100% WAF bypass with visible live browser monitoring.
     """
     browser_args = list(DEFAULT_BROWSER_ARGS)
     ua = MOBILE_USER_AGENT if is_mobile else DESKTOP_USER_AGENT
     browser_args.append(f"--user-agent={ua}")
 
-    # Off-screen positioning for silent execution without triggering headless traps
+    # Standard visible on-screen window positioning
     if offscreen:
         browser_args.append("--window-position=3000,3000")
         browser_args.append("--window-size=1440,900")
     else:
+        browser_args.append("--window-position=50,50")
         browser_args.append("--window-size=1440,900")
 
     if proxy_url:
