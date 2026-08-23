@@ -38,7 +38,7 @@ SURGICAL_BLOCKED_URLS = [
 async def start_stealth_browser(
     headless: bool = False,
     is_mobile: bool = False,
-    block_media: bool = False,
+    block_media: bool = True,
     offscreen: bool = False,
     proxy_url: Optional[str] = None,
     user_data_dir: Optional[str] = None,

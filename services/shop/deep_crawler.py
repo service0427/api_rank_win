@@ -20,7 +20,7 @@ async def crawl_shop_deep_nodriver(
     max_pages: int = 13,
     headless: bool = False,
     offscreen: bool = False,
-    block_media: bool = False,
+    block_media: bool = True,
     proxy_url: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
