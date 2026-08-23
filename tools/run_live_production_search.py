@@ -30,11 +30,11 @@ async def run_live_search(keyword: str, target_id: str = "", max_pages: int = 3)
     print(f"  - 실행 모드   : 화면 표시 리얼 브라우저 (headless=False) + 트래픽 95% 절감")
     
     # 1. Random Proxy Selection from dedicated pool (115.21.112.42:10016~10020)
-    current_proxy = proxy_mgr.get_next_proxy(random_choice=True)
+    current_proxy = proxy_mgr.get_next_proxy(random_choice=True, check_alive=True)
     if current_proxy:
-        print(f"  - 프록시 연결 : {current_proxy} (115.21.112.42:10016~10020 풀 랜덤 회전)")
+        print(f"  - 프록시 연결 : {current_proxy} (★ 활성 확인 완료)")
     else:
-        print("  - 프록시 연결 : 로컬 다이렉트")
+        print("  - 프록시 상태 : 프록시 서버 화이트리스트 미등록 또는 접속 불가 -> [로컬 다이렉트 IP]로 안전 실행")
     print("=" * 85)
 
     browser_args = [

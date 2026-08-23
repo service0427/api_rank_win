@@ -1,6 +1,7 @@
 import random
 import json
 import os
+import socket
 import time
 import urllib.request
 from typing import Dict, List, Optional
@@ -27,20 +28,7 @@ class ProxyManager:
         if not force and (now - self._last_sync_time < 20) and self._proxies:
             return self._proxies
 
-        # 1. Check if proxy status API is available
-        try:
-            req = urllib.request.urlopen(PROXY_STATUS_API, timeout=2.0)
-            data = json.loads(req.read().decode())
-            active = data.get("proxies", [])
-            if active:
-                self._proxies = active
-                self._last_sync_time = now
-                logger.info(f"Refreshed proxy pool from API: {len(self._proxies)} active proxies available.")
-                return self._proxies
-        except Exception:
-            pass
-
-        # 2. Check if local proxy list file exists (config/proxies.txt or data/proxies.txt)
+        # 1. Check local proxy list file (config/proxies.txt)
         proxy_file = os.path.join(BASE_DIR, "config", "proxies.txt")
         if os.path.exists(proxy_file):
             try:
@@ -53,9 +41,37 @@ class ProxyManager:
             except Exception as e:
                 logger.debug(f"Failed to read {proxy_file}: {e}")
 
+        # 2. Check if proxy status API is available
+        try:
+            req = urllib.request.urlopen(PROXY_STATUS_API, timeout=1.5)
+            data = json.loads(req.read().decode())
+            active = data.get("proxies", [])
+            if active:
+                self._proxies = active
+                self._last_sync_time = now
+                logger.info(f"Refreshed proxy pool from API: {len(self._proxies)} active proxies available.")
+                return self._proxies
+        except Exception:
+            pass
+
         return self._proxies
 
-    def get_next_proxy(self, random_choice: bool = True) -> Optional[str]:
+    def test_proxy_alive(self, proxy_str: str, timeout: float = 1.0) -> bool:
+        """Quick TCP handshake check to avoid browser freezing on whitelisted/dead proxies."""
+        clean = proxy_str.replace("socks5://", "").replace("http://", "").replace("socks5h://", "")
+        if ":" not in clean:
+            return False
+        host, port = clean.split(":", 1)
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(timeout)
+            sock.connect((host, int(port)))
+            sock.close()
+            return True
+        except Exception:
+            return False
+
+    def get_next_proxy(self, random_choice: bool = True, check_alive: bool = False) -> Optional[str]:
         proxies = self.refresh_proxies()
         if not proxies:
             return None
@@ -69,22 +85,25 @@ class ProxyManager:
                 available.append(addr)
 
         if not available:
-            # If all failed, reset cooldown and use all
             available = [p.get("proxy") for p in proxies if p.get("proxy")]
 
         if not available:
             return None
 
-        # Select random or round-robin
+        # Randomize selection
         if random_choice:
-            selected = random.choice(available)
-        else:
-            selected = available[self._current_idx % len(available)]
-            self._current_idx += 1
+            random.shuffle(available)
 
-        if not selected.startswith("http://") and not selected.startswith("socks5://"):
-            return f"socks5://{selected}"
-        return selected
+        for candidate in available:
+            if check_alive:
+                if self.test_proxy_alive(candidate, timeout=0.8):
+                    return candidate if candidate.startswith(("socks5://", "http://")) else f"socks5://{candidate}"
+                else:
+                    self._failed_proxies[candidate] = now
+            else:
+                return candidate if candidate.startswith(("socks5://", "http://")) else f"socks5://{candidate}"
+
+        return None
 
     def mark_proxy_failed(self, proxy_url: str, reason: str = ""):
         clean = proxy_url.replace("socks5://", "").replace("http://", "")
