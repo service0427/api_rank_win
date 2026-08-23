@@ -1,6 +1,12 @@
-import asyncio
 import os
 import sys
+
+# Ensure project root is in sys.path
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+import asyncio
 import json
 import time
 import urllib.parse
@@ -13,7 +19,7 @@ from core.browser import SURGICAL_BLOCKED_URLS
 sys.stdout.reconfigure(encoding='utf-8')
 
 CHROME_PATH = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-DATA_DIR = os.path.join(os.getcwd(), "data", "live_production_profile")
+DATA_DIR = os.path.join(PROJECT_ROOT, "data", "live_production_profile")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 async def run_live_search(keyword: str, target_id: str = "", max_pages: int = 3):
@@ -23,12 +29,12 @@ async def run_live_search(keyword: str, target_id: str = "", max_pages: int = 3)
     print(f"  - 타겟 상품 ID: '{target_id}' (발견 시 즉시 반환)")
     print(f"  - 실행 모드   : 화면 표시 리얼 브라우저 (headless=False) + 트래픽 95% 절감")
     
-    # 1. Random Proxy Selection
+    # 1. Random Proxy Selection from dedicated pool (115.21.112.42:10016~10020)
     current_proxy = proxy_mgr.get_next_proxy(random_choice=True)
     if current_proxy:
-        print(f"  - 프록시 연결 : {current_proxy} (랜덤 회전 적용)")
+        print(f"  - 프록시 연결 : {current_proxy} (115.21.112.42:10016~10020 풀 랜덤 회전)")
     else:
-        print("  - 프록시 연결 : 로컬 다이렉트 (프록시 풀 대기)")
+        print("  - 프록시 연결 : 로컬 다이렉트")
     print("=" * 85)
 
     browser_args = [
@@ -239,7 +245,7 @@ async def run_live_search(keyword: str, target_id: str = "", max_pages: int = 3)
         browser.stop()
 
 if __name__ == "__main__":
-    kw = sys.argv[1] if len(sys.argv) > 1 else "노트북"
+    kw = sys.argv[1] if len(sys.argv) > 1 else "스마트폰"
     tg = sys.argv[2] if len(sys.argv) > 2 else ""
     try:
         uc.loop().run_until_complete(run_live_search(kw, tg))
