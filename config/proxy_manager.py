@@ -1,9 +1,11 @@
+import random
 import json
+import os
 import time
 import urllib.request
 from typing import Dict, List, Optional
 from core.logger import get_logger
-from config.settings import PROXY_STATUS_API, USE_PROXY_POOL
+from config.settings import PROXY_STATUS_API, USE_PROXY_POOL, BASE_DIR
 
 logger = get_logger("rank.proxy")
 
@@ -22,47 +24,67 @@ class ProxyManager:
 
     def refresh_proxies(self, force: bool = False) -> List[Dict[str, any]]:
         now = time.time()
-        if not force and (now - self._last_sync_time < 30) and self._proxies:
+        if not force and (now - self._last_sync_time < 20) and self._proxies:
             return self._proxies
 
+        # 1. Check if proxy status API is available
         try:
-            req = urllib.request.urlopen(PROXY_STATUS_API, timeout=3.0)
+            req = urllib.request.urlopen(PROXY_STATUS_API, timeout=2.0)
             data = json.loads(req.read().decode())
             active = data.get("proxies", [])
             if active:
                 self._proxies = active
                 self._last_sync_time = now
-                logger.info(f"Refreshed proxy pool: {len(self._proxies)} active proxies available.")
+                logger.info(f"Refreshed proxy pool from API: {len(self._proxies)} active proxies available.")
                 return self._proxies
-        except Exception as e:
-            logger.debug(f"Proxy status API {PROXY_STATUS_API} not reachable: {e}")
+        except Exception:
+            pass
+
+        # 2. Check if local proxy list file exists (config/proxies.txt or data/proxies.txt)
+        proxy_file = os.path.join(BASE_DIR, "config", "proxies.txt")
+        if os.path.exists(proxy_file):
+            try:
+                with open(proxy_file, "r", encoding="utf-8") as f:
+                    lines = [line.strip() for line in f if line.strip() and not line.startswith("#")]
+                if lines:
+                    self._proxies = [{"proxy": p} for p in lines]
+                    self._last_sync_time = now
+                    return self._proxies
+            except Exception as e:
+                logger.debug(f"Failed to read {proxy_file}: {e}")
 
         return self._proxies
 
-    def get_next_proxy(self) -> Optional[str]:
-        if not USE_PROXY_POOL:
-            return None
-
+    def get_next_proxy(self, random_choice: bool = True) -> Optional[str]:
         proxies = self.refresh_proxies()
         if not proxies:
             return None
 
-        for _ in range(len(proxies)):
-            p = proxies[self._current_idx % len(proxies)]
+        # Filter out failed/cooldown proxies
+        available = []
+        now = time.time()
+        for p in proxies:
+            addr = p.get("proxy")
+            if addr and (now - self._failed_proxies.get(addr, 0) >= 60):
+                available.append(addr)
+
+        if not available:
+            # If all failed, reset cooldown and use all
+            available = [p.get("proxy") for p in proxies if p.get("proxy")]
+
+        if not available:
+            return None
+
+        # Select random or round-robin
+        if random_choice:
+            selected = random.choice(available)
+        else:
+            selected = available[self._current_idx % len(available)]
             self._current_idx += 1
-            proxy_addr = p.get("proxy")
 
-            # Check if temporarily cooldown
-            fail_time = self._failed_proxies.get(proxy_addr, 0)
-            if time.time() - fail_time < 60:  # 60s cooldown for bad IP
-                continue
-
-            return f"socks5://{proxy_addr}"
-
-        # If all in cooldown, return the least recently used
-        p = proxies[self._current_idx % len(proxies)]
-        self._current_idx += 1
-        return f"socks5://{p.get('proxy')}"
+        if not selected.startswith("http://") and not selected.startswith("socks5://"):
+            return f"socks5://{selected}"
+        return selected
 
     def mark_proxy_failed(self, proxy_url: str, reason: str = ""):
         clean = proxy_url.replace("socks5://", "").replace("http://", "")
